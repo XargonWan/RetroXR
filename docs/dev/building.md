@@ -102,6 +102,23 @@ A hardened Mac export will need library validation disabled for downloaded unsig
 and unsigned executable memory for callback trampolines; dynarec cores may also need the
 JIT entitlement.
 
+### A Linux AppImage
+
+    python Tools/build_appimage.py                      # build, import, export, package
+    python Tools/build_appimage.py --steps export,package --name RetroXR-test.AppImage --smoke
+
+The same steps `release.yml` runs for its linux-x86_64 job, locally; output is
+`build_out/RetroXR-linux-x86_64-<version>-<sha>.AppImage` (gitignored). What it handles because
+each one cost a build: **Git LFS** (without it the GLBs are pointer files and the build has no
+console or cartridge models, so it pulls), **free disk space** (stops under `--min-free-gb`, 3 by
+default: a disk that fills mid-export leaves a half-written package), **no static `libstdc++`**
+(Fedora ships it as `libstdc++-static`: it passes `use_static_cpp=no`, and the AppImage then uses the
+host's), and **no `libvlc.so` development link** (when only the runtime library is installed it points
+vlc-godot's link at a stub for the build and RESTORES `vlc-godot/SConscript`; install `vlc-devel` to
+make that unnecessary). At run time the AppImage needs the host's libvlc and GL/Vulkan libraries and
+bundles `libSDL3.so.0`; FUSE is not required (`APPIMAGE_EXTRACT_AND_RUN=1`). The export needs the 4.7
+export templates. It does not build the Quest APK (`Tools/place_engine.py` and the patched engine).
+
 ## `**/*.info` belongs in EVERY export preset
 
 `CoreInfoDatabase` reads `res://libretro-core-info/` and `res://libretro-core-info-retroxr/`.

@@ -174,3 +174,6 @@ scorecard.png
 
 # Python bytecode from running the repo-root Tools/ scripts.
 __pycache__/
+
+# Local export and packaging output (APK, Linux build, AppImage).
+build_out/
