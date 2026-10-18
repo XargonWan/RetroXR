@@ -212,7 +212,9 @@ const _NO_STANDIN_CONSOLE: Array[String] = ["dreamcast", "genesis"]
 ## composite socket at all, so the generic lead would fit its television and
 ## nothing on the console. Its card lists the RF switch instead. The Genesis, for
 ## the Wii's and N64's reason: its one socket is a 9-pin mini-DIN.
-const _OWN_AV_LEAD: Array[String] = ["nes", "famicom", "wii", "n64", "genesis"]
+## The arcade cabinet is here for the opposite of a missing socket: its monitor is part
+## of it, so there is no lead to run anywhere.
+const _OWN_AV_LEAD: Array[String] = ["nes", "famicom", "wii", "n64", "genesis", "arcade"]
 
 ## Hardware whose picture leaves on a captive pigtail rather than through sockets
 ## (av_port_channels() is empty), so a spawned lead has nothing to enter at that
@@ -376,6 +378,8 @@ const _LIGHT_GUN_PLATFORMS: Array = [
 	"nes", "snes", "mastersystem", "genesis", "saturn",
 	"dreamcast", "psx", "ps2", "atari2600", "atari7800",
 	"atari800", "c64", "zxspectrum", "amstradcpc", "3do", "cdi",
+	# Gun cabinets were a whole genre: the cabinet's front sockets take one.
+	"arcade",
 ]
 
 
