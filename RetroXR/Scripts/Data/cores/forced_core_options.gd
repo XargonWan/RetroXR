@@ -39,6 +39,18 @@ static func all(core: String, systemid: String, rom_path: String,
 	return out
 
 
+## A light gun in a port. Current MAME reads a gun only when `mame_lightgun_mode` says so (its default,
+## `none`, ignores a gun on the port: the cabinet's guns "did not work"), and it lists NO light-gun
+## device among its controllers, so announcing one does nothing by itself. Pinned for the run while
+## any port holds a gun; FinalBurn Neo lists a "Lightgun" device and needs nothing. Measured:
+## arcade_load_probe --controllers on both cores. Other MAME-based cores name this option differently
+## and are not covered.
+static func lightgun(core: String, has_gun: bool) -> Dictionary:
+	if has_gun and core == "mame":
+		return {"mame_lightgun_mode": "lightgun"}
+	return {}
+
+
 ## Which Game Boy mGBA is. Left on Autodetect it reads the cartridge, and a
 ## header that says "Super Game Boy enhanced" (0x146 = 03, which the Game Boy
 ## Camera's does) boots as a Super Game Boy; `mgba_sgb_borders` defaults ON, so
