@@ -61,6 +61,8 @@ const _REFERENCE_FIELDS := [
 	"nunchuk", "motion_plus", "expansion_cover", "pak", "gb_cart",
 	# The clip-on accessory on an expansion unit -- the 32X's Model 2 spacer.
 	"accessory",
+	# An arcade cabinet's bay, and the board standing in a bay.
+	"bay", "board",
 ]
 ## Stamped on a mod prop when it spawns, so _serialize_node can recognise it
 ## without a class to test against. The value is the registered type string.
@@ -203,6 +205,11 @@ const SATURN_LINK_CABLE_SCENE := preload("res://Scenes/Objects/cables/saturn_lin
 const JAG_LINK_CABLE_SCENE  := preload("res://Scenes/Objects/cables/jag_link_cable.tscn")
 const ILINK_CABLE_SCENE      := preload("res://Scenes/Objects/cables/ilink_cable.tscn")
 const ILINK_HUB_SCENE        := preload("res://Scenes/Objects/cables/ilink_hub.tscn")
+const JAMMA_CABLE_SCENE      := preload("res://Scenes/Objects/cables/jamma_cable.tscn")
+const ARCADE_BAY_JAMMA_SCENE := preload("res://Scenes/Objects/peripherals/arcade_bay_jamma.tscn")
+const ARCADE_BAY_MVS_SCENE   := preload("res://Scenes/Objects/peripherals/arcade_bay_mvs.tscn")
+const ARCADE_BAY_LASERDISC_SCENE := preload("res://Scenes/Objects/peripherals/arcade_bay_laserdisc.tscn")
+const ARCADE_BAY_DISCRETE_SCENE := preload("res://Scenes/Objects/peripherals/arcade_bay_discrete.tscn")
 const POWER_CORD_SCENE       := preload("res://Scenes/Objects/cables/power_cord.tscn")
 const POWER_STRIP_SCENE      := preload("res://Scenes/Objects/appliances/power_strip.tscn")
 const NEMA_1_15_C7_CORD_SCENE := preload(
@@ -282,6 +289,8 @@ const LEAD_SCENES := {
 	"saturn_link_cable": SATURN_LINK_CABLE_SCENE,
 	"jag_link_cable": JAG_LINK_CABLE_SCENE,
 	"ilink_cable": ILINK_CABLE_SCENE,
+	# A JAMMA harness lead: a cabinet's back socket to a bay's.
+	"jamma_cable": JAMMA_CABLE_SCENE,
 	"rf_switch": RF_SWITCH_SCENE,
 	"antenna": ANTENNA_SCENE,
 	"power_cord": POWER_CORD_SCENE,
@@ -308,6 +317,12 @@ const PLAIN_SCENES := {
 	# Pose only: the hub has no state of its own. Which lead is in which of its
 	# sockets is recorded by each LEAD, naming this hub and "PortN".
 	"ilink_hub": ILINK_HUB_SCENE,
+	# The arcade cabinet's bay, one scene per kind. A pose and the board standing in it; which cabinet
+	# plays from it is recorded on the CABINET's entry ("bay"), or by a JAMMA lead's plug.
+	"arcade_bay_jamma": ARCADE_BAY_JAMMA_SCENE,
+	"arcade_bay_mvs": ARCADE_BAY_MVS_SCENE,
+	"arcade_bay_laserdisc": ARCADE_BAY_LASERDISC_SCENE,
+	"arcade_bay_discrete": ARCADE_BAY_DISCRETE_SCENE,
 	"light_gun": LIGHT_GUN_SCENE,
 	# Slots written before the rename say "ray_gun".
 	"ray_gun": LIGHT_GUN_SCENE,
@@ -1465,6 +1480,10 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 			var ch_tv := _resolve_ref(root, spawned, extra[i]) as RetroTV
 			if ch_tv:
 				sys.restore_cable_connection(ch_tv, i + 1, _tv_input(tv_inputs, i + 1))
+		# Its bay first, so the board is seated into the bay's slot and not the cabinet's shut one.
+		var bay := _resolve_ref(root, spawned, d.get("bay")) as ArcadeBayUnit
+		if bay:
+			sys.restore_bay(bay)
 		var cart := _resolve_ref(root, spawned, d.get("cartridge")) as RetroCartridge
 		if cart:
 			sys.restore_cartridge(cart, float(d.get("cartridge_yaw", 0.0)))
@@ -1499,6 +1518,13 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		var lid_angle := float(d.get("lid_angle", -1.0))
 		if lid_angle >= 0.0:
 			sys.set_lid_angle_deg.call_deferred(lid_angle)
+	elif obj is ArcadeBayUnit:
+		# The board standing in it. Idempotent with the cabinet that plays from it: a snap zone
+		# already holding the board does nothing, so whichever restore comes first wins.
+		var board := _resolve_ref(root, spawned, d.get("board")) as Node3D
+		var unit := obj as ArcadeBayUnit
+		if board and unit.slot != null and unit.get_board() == null:
+			unit.slot.pick_up_object(board)
 	elif obj is RetroExpansion:
 		# The disk, disc or cartridge in this unit's own bay. Independent of the
 		# order the stack is rebuilt in: a bay seats its media as a pose relative
@@ -1819,6 +1845,13 @@ func _serialize_system(sys: RetroSystem, id: int, n3d: Node3D,
 		"video_out": sys.video_out_enabled,
 		"ignore_gravity": sys.ignore_gravity,
 	})
+	# A cabinet playing from a separate bay: the board is the BAY's (its entry names it), and the
+	# bay is recorded here when it is clipped into the mount. A cabled one is the lead's.
+	var bay := sys.get_bay()
+	if bay != null:
+		result["cartridge"] = _ref(node_to_id, null)
+		if sys.bay_link_kind() == ArcadeBayUnit.DOCK:
+			result["bay"] = _ref(node_to_id, bay)
 	# Which image the memory built into it is. Omitted on a machine with none, so
 	# no room without a Saturn or a 3DO in it changes at all.
 	if sys.console_memory() != null:
@@ -2018,6 +2051,12 @@ func _serialize_kind(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 	elif node is ILinkHub:
 		# Pose only, and needs this branch for the table's reason below.
 		return _base(id, "ilink_hub", n3d)
+	elif node is ArcadeBayUnit:
+		# The pose and the board standing in it. Whether it is in a cabinet's mount is on the
+		# cabinet's entry, and a cabled one is the lead's; the board is here because a bay standing
+		# alone with a game in it has nobody else to remember it.
+		var bay := node as ArcadeBayUnit
+		return _base(id, bay.type_id, n3d).merged({"board": _ref(node_to_id, bay.get_board())})
 	elif node is Table:
 		# Pose only. Being in PLAIN_SCENES is not enough on its own — that map is
 		# read when LOADING, so without this branch a table is never written and
