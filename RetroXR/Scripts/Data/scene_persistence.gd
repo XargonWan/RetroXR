@@ -48,6 +48,8 @@ const _NUMBER_FIELDS := [
 	"page_leaf", "sensitivity", "stick_distance", "device_type", "port_index",
 	"volume", "cords",
 	"pad_ordinal", "fit_mode", "roll",
+	# A cabinet's own say over the arcade attract option -- see RetroSystem.attract_override.
+	"attract",
 	# The length a player forced on a lead at spawn, in metres. Absent means the
 	# scene's own -- see CompositeCable.cord_length.
 	"cord_length",
@@ -1848,6 +1850,9 @@ func _serialize_system(sys: RetroSystem, id: int, n3d: Node3D,
 	# A cabinet with its art taken off; omitted while it is on (the default), so no room changes.
 	if not sys.cabinet_art_enabled:
 		result["cabinet_art"] = false
+	# A cabinet that was told to attract or not to; omitted while it follows the global pref.
+	if sys.attract_override != ArcadeAttract.OVERRIDE_FOLLOW:
+		result["attract"] = sys.attract_override
 	# A cabinet playing from a separate bay: the board is the BAY's (its entry names it), and the
 	# bay is recorded here when it is clipped into the mount. A cabled one is the lead's.
 	var bay := sys.get_bay()
@@ -2631,6 +2636,8 @@ func _deserialize_kind(data: Dictionary) -> Node3D:
 				sys.core_name = str(data.get("core_name", ""))
 				sys.ignore_gravity = bool(data.get("ignore_gravity", false))
 				sys.cabinet_art_enabled = bool(data.get("cabinet_art", true))
+				sys.attract_override = clampi(int(data.get("attract", ArcadeAttract.OVERRIDE_FOLLOW)),
+					ArcadeAttract.OVERRIDE_FOLLOW, ArcadeAttract.OVERRIDE_OFF)
 				sys.console_memory_id = str(data.get("console_memory", ""))
 				# Before the caller adds it to the tree, like the fields above:
 				# _build_expansion_hardware runs from _ready and seeds a bay's
