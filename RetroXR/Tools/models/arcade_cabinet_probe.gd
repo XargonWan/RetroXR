@@ -267,6 +267,53 @@ func _shot_panel() -> void:
 	await _save("panel")
 
 
+## The power button as a latched ON / OFF switch (attract on, a game in the bay): off, then on. switch_off.png, switch_on.png.
+func _shot_switch() -> void:
+	AppPrefs.arcade_attract_mode = true
+	_model.set_lid_angle_deg(90.0)
+	var cart := CART_SCENE.instantiate() as Node3D
+	cart.systemid = _systemid
+	cart.rom_path = "/tmp/sf2.zip"
+	cart.freeze = true
+	cart.position = Vector3(0, 3, 0)
+	add_child(cart)
+	await _frames(8)
+	(_sys as RetroSystem).get_bay().slot.pick_up_object(cart)
+	await _frames(8)
+	var button := (_sys as RetroSystem).get_node("PowerButton") as Node3D
+	var at := button.global_position
+	_look(at + Vector3(0.0, 0.18, 0.28), at)
+	await _save("switch_off")
+	(_sys as RetroSystem).toggle_power()
+	await _frames(6)
+	await _save("switch_on")
+	(_sys as RetroSystem).toggle_power()
+	AppPrefs.arcade_attract_mode = false
+
+
+## The panel dressed for several games (ArcadeGameProfile): the table alone, then with the words FBNeo
+## publishes (measured with Tools/cores/arcade_descriptors_probe). One PNG per game: game_<name>.png.
+func _shot_game() -> void:
+	var fbneo_sf2 := [[2, "Coin"], [3, "Start"], [4, "Up"], [5, "Down"], [6, "Left"], [7, "Right"], [1, "Weak Punch"],
+		[9, "Medium Punch"], [10, "Strong Punch"], [0, "Weak Kick"], [8, "Medium Kick"], [11, "Strong Kick"]]
+	var fbneo_dino := [[2, "Coin"], [3, "Start"], [4, "Up"], [5, "Down"], [6, "Left"], [7, "Right"], [0, "Attack"], [8, "Jump"]]
+	var games := [["sf2_table", "sf2", []], ["sf2_words", "sf2", fbneo_sf2], ["dino_words", "dino", fbneo_dino],
+		["hotd2", "hotd2", []], ["pong", "pong", []], ["daytona", "daytona", []]]
+	for g: Array in games:
+		var profile := ArcadeGameProfile.for_romset(str(g[1]))
+		var rows: Array = []
+		for port in 2:
+			for d: Array in g[2]:
+				rows.append({"port": port, "device": 1, "index": 0, "id": d[0], "description": d[1]})
+		if not rows.is_empty():
+			profile.apply_descriptors(rows)
+		_model.apply_game_profile(profile)
+		await _frames(3)
+		_look(Vector3(0, 1.45, 1.05), Vector3(0, 0.98, 0.42))
+		await _save("game_%s" % g[0])
+	_model.apply_game_profile(null)
+
+
 func _shot_bay() -> void:
 	_model.set_lid_angle_deg(90.0)
 	var cart := CART_SCENE.instantiate() as Node3D
