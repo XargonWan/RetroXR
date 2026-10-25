@@ -927,6 +927,7 @@ func _spawn_captive_controllers() -> void:
 	if paths.is_empty():
 		return
 	var rests: Array = _model.captive_controller_rests()
+	var mounts: Array = _model.captive_gun_mounts() if _model.has_method("captive_gun_mounts") else []
 	var parent: Node = get_tree().current_scene
 	if parent == null:
 		parent = get_parent()
@@ -961,7 +962,12 @@ func _spawn_captive_controllers() -> void:
 			var node := _port_zones[i].get_node_or_null(hidden) as Node3D
 			if node != null:
 				node.hide()
-		if i < rests.size():
+		var mount: Dictionary = mounts[i] if i < mounts.size() else {}
+		if not mount.is_empty() and pad is LightGun:
+			# A gun on a swivel mount is fixed to the cabinet: it turns about its pivot and never leaves, so it
+			# has no well to be taken out of and put back in.
+			(pad as LightGun).fix_to_mount(mount["pivot"] as Node3D, mount["local"] as Vector3, bool(mount["lever"]))
+		elif i < rests.size():
 			_build_controller_well(i, rests[i] as Transform3D, pad)
 
 
