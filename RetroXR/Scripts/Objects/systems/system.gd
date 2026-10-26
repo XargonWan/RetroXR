@@ -2337,7 +2337,13 @@ func _release_plug(port: XRToolsSnapZone, plug: CablePlug) -> void:
 ## socket is live again. Deliberately not awaited by the caller: the release has
 ## already happened, and this only reopens the socket behind it.
 func _reopen_port(port: XRToolsSnapZone) -> void:
+	# The machine can be on its way out (or already out of the tree) when a plug is pulled from it, and
+	# then there is no tree to wait on and no socket worth reopening.
+	if not is_inside_tree():
+		return
 	await get_tree().physics_frame
+	if not is_inside_tree():
+		return
 	await get_tree().physics_frame
 	if is_instance_valid(port):
 		port.enabled = true
@@ -5339,9 +5345,13 @@ func _unbind_port(lib_port: int, plug: Node3D, cabinet_index: int, announce_devi
 		return
 	print("[RetroSystem] port %d released" % cabinet_index)
 	# Stop any active rumble on the controller being unplugged.
-	var ctrl: Node3D = plug.get_controller() \
-		if is_instance_valid(plug) and plug.has_method("get_controller") else plug
-	if is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
+	# A pad deleted while its plug still sits in the port leaves the plug holding a FREED controller, and a freed
+	# instance cannot be assigned to a typed variable: ask for it untyped, and keep it only if it is still there.
+	var held: Variant = null
+	if is_instance_valid(plug):
+		held = plug.get_controller() if plug.has_method("get_controller") else plug
+	var ctrl: Node3D = held if is_instance_valid(held) else null
+	if ctrl != null and ctrl.has_method("set_rumble"):
 		ctrl.set_rumble(0.0, 0.0)
 	var device_type: int = plug.get("device_type") \
 		if is_instance_valid(plug) and "device_type" in plug else 1
