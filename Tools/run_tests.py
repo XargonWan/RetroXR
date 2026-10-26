@@ -11,7 +11,8 @@ Everything under RetroXR/Tests/ is a suite that checks itself, runs unattended
 with no ROM, core, headset or device, and exits non-zero on failure. That exit
 code is the contract and the only thing every suite agrees on -- the summary
 lines differ ("[test]", "[av]", "[bay]"), so the table below scrapes counts for
-readability but the verdict is always the process's status.
+readability but the verdict is the process's status. One thing is read from the
+output as well: a SCRIPT ERROR in a suite that still exits 0 (see SCRIPT below).
 
 Suites run SEQUENTIALLY and never in parallel. Each one writes the player's real
 `user://` state -- prefs.json, controller_bindings.json, the arcade manifest,
@@ -238,8 +239,19 @@ def check_baseline(results: list[tuple[str, str, int, int, float]]) -> list[str]
     return dropped
 
 
+# A script error aborts the function it happened in and nothing else: the suite goes on, finishes and
+# exits 0, having skipped everything that function had left to check (link_tests lost four cases to a
+# stale property that way, and av_tests and system_tests printed one each for months). The exit code
+# cannot see it, so the output is read for it. Anything NOISE filters is already gone from `clean`.
+SCRIPT_ERROR = re.compile(r"^SCRIPT ERROR", re.MULTILINE)
+
+
+def script_errors(clean: str) -> int:
+    return len(SCRIPT_ERROR.findall(clean))
+
+
 def verdict(code: int, timed_out: bool) -> str:
-    """OK / FAIL / CRASH / TIMEOUT.
+    """OK / FAIL / CRASH / TIMEOUT (SCRIPT is decided by the caller, from the output).
 
     A suite can print a clean summary and still die on the way out --
     motion_tests has passed every case and then segfaulted during teardown. That is still a red run, but it needs a different fix from a failed
@@ -276,7 +288,8 @@ def interesting(text: str) -> str:
     return "\n".join(lines[:60]).strip()
 
 
-def run_one(godot: str, name: str, timeout: int, extra: list[str]) -> tuple[str, int, int, float, str]:
+def run_one(godot: str, name: str, timeout: int, extra: list[str],
+            allow_script_errors: bool = False) -> tuple[str, int, int, float, str]:
     cmd = [godot, "--headless", "--path", str(PROJECT), f"res://Tests/{name}.tscn"]
     if extra:
         cmd += ["--", *extra]
@@ -305,10 +318,15 @@ def run_one(godot: str, name: str, timeout: int, extra: list[str]) -> tuple[str,
     checks, failures = scrape(clean)
 
     status = verdict(code, timed_out)
+    hidden = script_errors(clean) if status == "OK" else 0
+    if hidden and not allow_script_errors:
+        status = "SCRIPT"
     if timed_out:
         print(f"    TIMEOUT after {timeout}s", flush=True)
     else:
         note = f"  <-- exit 0x{code:08X}" if status == "CRASH" else ""
+        if hidden:
+            note = f"  <-- {hidden} SCRIPT ERROR(s) in a suite that exited 0"
         print(f"    {status}  {checks} checks, {failures} failed  {secs:.1f}s{note}", flush=True)
 
     return status, checks, failures, secs, clean
@@ -327,6 +345,8 @@ def main() -> int:
                     help=f"per-suite seconds (default {DEFAULT_TIMEOUT})")
     ap.add_argument("--verbose", action="store_true",
                     help="print each suite's filtered output, not only failures'")
+    ap.add_argument("--allow-script-errors", action="store_true",
+                    help="report a SCRIPT ERROR in a suite that exits 0 but do not fail the run for it")
     ap.add_argument("--update-baseline", action="store_true",
                     help="rewrite Tools/test_baseline.json from this run's counts")
     ap.add_argument("forward", nargs="*", help=argparse.SUPPRESS)
@@ -357,7 +377,7 @@ def main() -> int:
     results: list[tuple[str, str, int, int, float]] = []
     outputs: dict[str, str] = {}
     for name in suites:
-        status, checks, failures, secs, out = run_one(godot, name, args.timeout, extra)
+        status, checks, failures, secs, out = run_one(godot, name, args.timeout, extra, args.allow_script_errors)
         results.append((name, status, checks, failures, secs))
         outputs[name] = out
         if args.verbose:
@@ -381,7 +401,8 @@ def main() -> int:
                 print(interesting(outputs[name]) or "(no output)")
             print("\n(--verbose for the full log of every suite)")
         # A crash after every case passed is a different problem from a failed
-        # assertion, so name the kind rather than lumping them together.
+        # assertion, and a script error that left the exit code 0 from both, so
+        # name the kind rather than lumping them together.
         print(f"\n{len(bad)} of {len(results)} suites not OK: "
               + ", ".join(f"{n} ({s})" for n, s in bad))
         return 1
