@@ -785,6 +785,7 @@ func _load_system_model() -> void:
 	_build_port_zones()
 	_build_usb_ports()
 	_spawn_captive_controllers()
+	_spawn_captive_gear()
 	_build_memcard_slots()
 	_build_disc_loader(is_bespoke)
 	_build_handheld()
@@ -980,6 +981,31 @@ func _captive_cord_length(pad: Node3D) -> float:
 
 ## How far from a holster's seat a hand still takes the gun out of it, in metres.
 const GUN_WELL_REACH := 0.13
+
+
+## Hand-held gear a cabinet's form is wired to besides its guns (a Taiko drummer's sticks): built after the form and taken away before the next (ArcadeGearRack). Nothing for any other machine.
+var _gear_rack: ArcadeGearRack = null
+
+
+func _spawn_captive_gear() -> void:
+	if _model == null or not _model.has_method("captive_gear"):
+		return
+	var rows: Array = _model.call("captive_gear")
+	if rows.is_empty() and _gear_rack == null:
+		return
+	if _gear_rack == null:
+		_gear_rack = ArcadeGearRack.new(self)
+	_gear_rack.spawn(rows, _model)
+
+
+func _free_captive_gear() -> void:
+	if _gear_rack != null:
+		_gear_rack.free_all()
+
+
+## The gear built with this machine, for whoever asks what came with it (ArcadeInput.engaged: a stick in a hand is somebody at the cabinet).
+func captive_gear() -> Array:
+	return _gear_rack.items() if _gear_rack != null else []
 
 
 ## The recess a captive pad lies in, as a snap zone, so it can be put back where
@@ -1761,6 +1787,7 @@ func _exit_tree() -> void:
 	if is_powered_on:
 		power_off()
 	_free_captive_controllers()
+	_free_captive_gear()
 	_release_cache_protection()
 	for i in _channels.size():
 		_remove_touch_surface(i)
@@ -2188,6 +2215,7 @@ func before_cabinet_form() -> void:
 			if node != null:
 				node.show()
 	_free_captive_controllers()
+	_free_captive_gear()
 
 
 ## The cabinet built a new form: its collision and pointer boxes, the port zones on its new sockets (a pad in a
@@ -2205,6 +2233,7 @@ func after_cabinet_form() -> void:
 			# Out of the zone's reach, so it is not taken straight back.
 			plug.global_position += zone.global_basis.z * 0.15
 	_spawn_captive_controllers()
+	_spawn_captive_gear()
 
 
 ## The System tab's Attract Mode row: follow the global option, or force it on or off for this cabinet.
